@@ -19,25 +19,65 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 #### 📥 Data Ingestion Agent
 
-**Technology:** Apache Spark
+**Technology:** Polars (local) + Apache Spark (scalable/cloud)
 
 **Responsibilities:**
 
-- Ingest solar production data from CSV/Parquet and SQL Server.
-- Fetch external weather data.
+- Ingest solar production data from a 100GB CSV file (nearly a trillion records).
+- Convert CSV to Parquet for efficient downstream processing.
+- Enable scalable, multi-threaded ingestion both locally and on Spark.
 
-**Build Steps:**
+**Build Steps (Local using Polars):**
 
-1. Configure Spark session (local or Synapse).
-2. Use `spark.read.csv` or `spark.read.parquet` for batch files.
-3. For SQL Server: use Spark JDBC connector (`spark.read.format("jdbc")`).
-4. Store all ingested data into Azure Blob Storage in Parquet format.
-5. Trigger ingestion from Airflow DAG or LangGraph node.
+1. Use Polars to read the massive CSV with `low_memory=True`:
+
+```python
+import polars as pl
+df = pl.read_csv("100gb_file.csv", low_memory=True)
+```
+
+2. Write it to Parquet (highly compressed and optimized):
+
+```python
+df.write_parquet("100gb_file.parquet")
+```
+
+3. Move the Parquet file to a processing location (e.g., Azure Blob Storage or local staging directory).
+
+**Build Steps (Scalable using Spark):**
+
+1. Launch Spark session locally or on Azure Synapse:
+
+```python
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("Ingest").getOrCreate()
+```
+
+2. Read from pre-converted Parquet file:
+
+```python
+df = spark.read.parquet("100gb_file.parquet")
+```
+
+3. Optionally repartition for parallel processing:
+
+```python
+df = df.repartition(100)  # Tune based on cores or cluster
+```
+
+4. Persist clean output to a cloud location:
+
+```python
+df.write.mode("overwrite").parquet("/mnt/blob/clean_solar_data")
+```
+
+5. Trigger ingestion from Airflow or LangGraph Supervisor node.
 
 **Scaling Tips:**
 
-- Partition by site and date to parallelize.
-- Use `.repartition()` before write.
+- Always convert CSV to Parquet before Spark ingestion.
+- Partition output by `site_id`, `year`, or `timestamp` to enable parallel access.
+- Use Polars for fast local ETL; use Spark for distributed workflows.
 
 ---
 
@@ -47,19 +87,23 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Normalize timestamps.
-- Fill missing values and remove outliers.
+- Normalize timestamps to UTC.
+- Fill missing time series values.
+- Remove outliers using statistical logic.
 
 **Build Steps:**
 
-1. Align timezones and convert timestamps to UTC.
-2. Fill gaps using Spark window functions (`last`, `lead`, `lag`).
-3. Apply outlier logic (e.g., IQR or z-score) using SQL expressions.
-4. Persist cleaned data in Parquet.
+1. Use Spark SQL to convert all timestamps to UTC and truncate to hourly or daily.
+2. Use Spark window functions like `lag`, `lead`, and `last` to detect and fill missing values.
+3. Use IQR logic in SQL (e.g., filtering outliers using 1.5 \* IQR) or calculate z-scores and filter rows where |z| > 3.
+4. Apply data type enforcement to ensure schema consistency.
+5. Write cleaned output to partitioned Parquet files for Feature Engineering Agent.
 
 **Scaling Tips:**
 
-- Use Spark SQL for large-scale filter operations.
+- Use `.repartition()` before write to optimize Spark performance.
+- Use `cache()` to speed up repeated DataFrame actions.
+- For very large datasets, process site-by-site or time-chunked splits.
 
 ---
 
@@ -97,17 +141,21 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Generate time-based and weather-derived features.
+- Generate rolling statistics, lags, and weather feature interactions.
 
 **Build Steps:**
 
-1. Add rolling means, lags (1h, 24h), and difference features.
-2. Encode weather signals (temp \* irradiance, cloud index).
-3. Output feature table to Parquet.
+1. Read cleaned production + weather data from Parquet.
+2. Create new time-based features: hour of day, day of week, month.
+3. Use Spark window functions to compute rolling averages (e.g., 24h mean, 7-day trend).
+4. Compute lagged variables (e.g., production\_1h\_ago, irradiance\_3h\_ago).
+5. Create interaction features: `temp * irradiance`, `cloud_cover * wind_speed`, etc.
+6. Output engineered feature dataset to Parquet.
 
 **Scaling Tips:**
 
-- Use Spark temp views for modular pipeline chaining.
+- Break features into reusable SQL temp views to modularize logic.
+- Use `broadcast` joins where one of the datasets (e.g., location metadata) is small.
 
 ---
 
@@ -137,21 +185,41 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Generate forecasts.
-- Blend base forecast + residual correction.
+- Generate time series forecasts for solar energy output.
+- Use Prophet for baseline trend and seasonality modeling.
+- Use XGBoost to correct residuals using weather and engineered features.
 
 **Build Steps:**
 
-1. Train Prophet model on base production time series.
-2. Compute residuals.
-3. Build feature set from lagged values + weather.
-4. Train XGBoost on residuals.
-5. Final forecast = Prophet + XGBoost output.
+1. **Train Prophet:**
+
+   - Input: time series aggregated at site/hour/day level.
+   - Model configuration: daily/weekly/yearly seasonality, changepoint flexibility.
+   - Output: base forecast + residuals (actuals - prediction).
+
+2. **Prepare residual correction features:**
+
+   - Use lagged values (e.g., 1h, 24h production).
+   - Add rolling means, cloud cover, irradiance, temp × humidity, and time-based features.
+
+3. **Train XGBoost model:**
+
+   - Input: engineered features + Prophet residuals as target.
+   - Tune using GridSearchCV and validate on hold-out window.
+
+4. **Forecasting flow:**
+
+   - Predict base using Prophet.
+   - Predict residuals using XGBoost.
+   - Combine: `Final Forecast = Prophet + Residual_Prediction`
+
+5. **Output:** Store final forecasts and components (prophet, xgb) in MLflow with metadata.
 
 **Scaling Tips:**
 
-- Train Prophet per-site.
-- Train XGBoost on clusters of similar sites to generalize.
+- Train Prophet per site in batch mode.
+- Group sites by geography or irradiance profile for shared XGBoost models.
+- For very high-resolution data (e.g., 15-min), downsample Prophet input or use local seasonality model.
 
 ---
 
@@ -181,17 +249,24 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Identify performance outliers.
+- Detect abnormal deviations between predicted and actual energy values.
+- Tag high-error time windows for alerting or investigation.
 
 **Build Steps:**
 
-1. Compute z-score on residuals.
-2. Flag any forecast with |z| > 2.5.
-3. Join flag to forecast output.
+1. Compute residuals between actual and final forecast.
+2. Calculate z-score per time point using rolling mean and stddev:
+   ```sql
+   z = (residual - mean) / stddev
+   ```
+3. Flag any time point where `abs(z) > 2.5` as an anomaly.
+4. Append anomaly flag column to forecast results table.
+5. Write anomaly-tagged results to Parquet for UI/LLM agents.
 
 **Scaling Tips:**
 
-- Use SQL logic for in-line z-score tagging.
+- Use Spark SQL to calculate z-scores on residuals in distributed mode.
+- Visualize top anomalies per day/week in Streamlit.
 
 ---
 
@@ -222,18 +297,20 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Present interactive dashboard.
+- Display forecasts, anomalies, backtest metrics, and user query results interactively.
 
 **Build Steps:**
 
-1. Display forecast vs actual plots with Plotly.
-2. Add toggles for anomaly visibility.
-3. Trigger query routing to LLM agent.
-4. Embed backtest chart and metadata table.
+1. Load final forecast and anomaly-tagged datasets from Parquet using DuckDB.
+2. Display Plotly line chart: forecast vs actual with anomaly highlights.
+3. Add dropdowns for site/date selection, and toggles for overlaying weather.
+4. Route user-entered natural language queries to LLM agent.
+5. Display backtest performance charts and data tables.
 
 **Scaling Tips:**
 
-- Cache long queries with `@st.cache_data`.
+- Use `@st.cache_data` for expensive queries or data fetch.
+- Modularize Streamlit into tabs (e.g., Forecasts, Anomalies, Query Bot).
 
 ---
 
@@ -243,18 +320,24 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Translate natural language questions into structured queries.
+- Enable natural language query capabilities.
+- Interpret user questions and retrieve answers from solar + forecast data.
 
 **Build Steps:**
 
-1. Use LangChain SQLChain with DuckDB.
-2. Template prompt: "What caused X on Y date?"
-3. Inject filtered data context.
-4. Display results in Streamlit as plot or text.
+1. Use LangChain’s SQL agent to route queries to DuckDB.
+2. Define prompt templates like:
+   - "Why was energy low on {{date}} at site {{site}}?"
+   - "Show anomaly spikes this week."
+3. Run a DuckDB query that filters relevant forecast, residuals, or weather data.
+4. Use OpenAI GPT-4o to generate an answer summary (text + table or chart).
+5. Return result via Streamlit interface to user.
 
 **Scaling Tips:**
 
-- Limit token count with pre-trimmed inputs.
+- Use DuckDB for sub-second analytics on Parquet.
+- Limit row output and column count in query result to reduce token size.
+- Use LangChain memory selectively for contextual follow-ups.
 
 ---
 
@@ -264,18 +347,24 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Evaluate forecast accuracy over time.
+- Evaluate forecast model accuracy using historical splits.
+- Visualize error trends and track drift.
 
 **Build Steps:**
 
-1. Define walk-forward split windows (e.g., 30 days).
-2. Compute MAE/RMSE across splits.
-3. Log results to MLflow.
-4. Visualize in Streamlit with Plotly.
+1. Read final forecast and actuals from Parquet.
+2. Define rolling evaluation windows (e.g., every 30 days).
+3. For each window:
+   - Train model on window `t1 → tN`
+   - Predict on `tN+1 → tN+30`
+   - Compute MAE, RMSE
+4. Log error metrics to MLflow.
+5. Plot time series of RMSE over time using Plotly.
 
 **Scaling Tips:**
 
-- Run backtests on partitioned datasets by site + year.
+- Partition forecast data by site and time.
+- Aggregate metrics by region/site group to monitor systemic drift.
 
 ---
 
@@ -285,17 +374,26 @@ This section provides detailed build instructions for each agent in the LangGrap
 
 **Responsibilities:**
 
-- Orchestrate execution flow across agents.
+- Coordinate execution order and dependencies between all agents.
+- Retry on failure, pass memory or outputs between agents.
 
 **Build Steps:**
 
-1. Define nodes for each agent.
-2. Encode conditional paths and retries.
-3. Schedule via Airflow or CLI entrypoint.
+1. Define each agent node in LangGraph (e.g., `data_ingest`, `forecast`, `anomaly_detect`).
+2. Connect nodes using LangGraph’s `edges()` API, e.g.,
+   ```python
+   graph.edge("data_ingest", "preprocess")
+   graph.edge("forecast", "anomaly_detect")
+   ```
+3. Use conditional logic to skip or retry failed stages.
+4. Execute graph via LangGraph executor or Airflow trigger.
 
 **Scaling Tips:**
 
-- Persist agent state in memory for reuse. Answer user questions about forecasts, anomalies, or trends. | LangChain + GPT-4o + DuckDB | Use LangChain with GPT-4o to translate queries into SQL over DuckDB views. Stream results to Streamlit UI. Template prompts to include date/site filters. | Use LangChain with OpenAI GPT-4o and connect to DuckDB as the SQL retriever backend. Build prompt templates that detect the user's intent (e.g., anomaly inspection vs forecast explanation) and convert that into prebuilt SQL queries. Route the result to Streamlit for visualization or as text summaries. Deployed as an async service that is triggered from Streamlit input. | LangChain + OpenAI GPT-4o + DuckDB | LangChain, OpenAI GPT-4o, FAISS, ChromaDB, DuckDB |
+- Store graph state outputs in memory or use cloud object store.
+- Break pipeline into independent subgraphs when testing.
+
+\--- Answer user questions about forecasts, anomalies, or trends. | LangChain + GPT-4o + DuckDB | Use LangChain with GPT-4o to translate queries into SQL over DuckDB views. Stream results to Streamlit UI. Template prompts to include date/site filters. | Use LangChain with OpenAI GPT-4o and connect to DuckDB as the SQL retriever backend. Build prompt templates that detect the user's intent (e.g., anomaly inspection vs forecast explanation) and convert that into prebuilt SQL queries. Route the result to Streamlit for visualization or as text summaries. Deployed as an async service that is triggered from Streamlit input. | LangChain + OpenAI GPT-4o + DuckDB | LangChain, OpenAI GPT-4o, FAISS, ChromaDB, DuckDB |
 
 ---
 
