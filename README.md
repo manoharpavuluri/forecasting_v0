@@ -637,15 +637,3 @@ When working with high-volume solar datasets (e.g., 100+ GB files or trillions o
 | Scheduler              | Airflow or Prefect          |
 
 ---
-
-### 📌 Next Steps
-
-Options to proceed:
-
-1. Develop a **Streamlit Dashboard** powered by the Forecast Agent and UI Agent
-2. Set up a **LangChain LLM interface** to enable user queries
-3. Build a **backtesting pipeline** to evaluate model performance weekly
-4. Package everything into a **GitHub starter repo** with Docker support
-
-Let me know which track to build first.
-
