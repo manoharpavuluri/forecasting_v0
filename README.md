@@ -760,6 +760,40 @@ When working with high-volume solar datasets (e.g., 100+ GB files or trillions o
 
 ### 📌 Next Steps
 
+> **Note:** All UI-related development such as the Streamlit dashboard is fully part of the **UI Agent**, not a separate component. The UI Agent serves as the frontend to interact with all agents, including Forecast Agent, Weather Data Agent, LLM Query Agent, and more.
+
+To operationalize the system and support full-cycle forecasting, analysis, and insight delivery, here are the prioritized next actions:
+
+#### ✅ 1. Develop a Streamlit Dashboard powered by Forecast Agent and UI Agent
+
+- Create a multi-tabbed Streamlit interface with sections for:
+  - Forecasts (line charts, overlays, site selection)
+  - Anomaly review (flagged timepoints with tooltips)
+  - Model performance history (RMSE/MAE charts from Backtesting Agent)
+  - Data ingestion and weather config triggers
+- Integrate with DuckDB to read forecast outputs from Parquet.
+- Wire buttons and dropdowns to trigger appropriate agents using LangGraph or REST API endpoints.
+
+#### ✅ 2. Set up a LangChain LLM Interface to Enable User Queries
+
+- Create a LangChain-based SQLAgent to connect GPT-4o to DuckDB.
+- Build natural language prompt templates like:
+  - “Why did production drop at site X on Y?”
+  - “Compare forecast accuracy by month.”
+- Integrate with Streamlit UI Agent via a chat-style input box.
+- Optimize responses by summarizing query results using GPT-4o.
+- Add LangGraph integration to optionally trigger model retraining, anomaly flagging, or historical analysis.
+
+#### ✅ 3. Build a Backtesting Pipeline to Evaluate Model Performance Weekly
+
+- Schedule weekly sliding-window evaluations across all forecasted sites.
+- Calculate RMSE, MAE, MAPE using held-out test periods.
+- Log model performance to MLflow with version control.
+- Display trendlines in Streamlit dashboard with error thresholds.
+- Automatically notify or trigger Retraining Agent when performance drops.
+
+Each of these steps strengthens modular deployment and makes the platform production-ready for solar energy forecasting.
+
 Options to proceed:
 
 1. Develop a **Streamlit Dashboard** powered by the Forecast Agent and UI Agent
