@@ -8,12 +8,132 @@ To design and deploy a multi-agent AI system that autonomously ingests, analyzes
 
 ### 🧠 Agent Architecture and Responsibilities
 
-This section provides detailed build instructions for each agent in the LangGraph-orchestrated forecasting system. Each agent includes:
+---
 
-- Purpose
-- Finalized technology
-- Step-by-step build instructions
-- Scaling guidance for high-volume datasets
+### 🏗️ Recommended Build Order (Optimized for Development + Testing)
+
+To support incremental development, early testing, and production readiness, follow this phased build sequence:
+
+#### **Phase 1: Core Agents + Minimal UI (MVP)**
+
+- **Data Ingestion Agent** – Start with Polars to process a smaller CSV subset to Parquet.
+- **Preprocessing Agent** – Add timestamp normalization and missing value handling.
+- **Forecast Agent (Prophet-only)** – Implement baseline daily/hourly forecast.
+- **UI Agent (Streamlit MVP)** – Add:
+  - CSV file upload for ingestion
+  - Trigger for running Prophet forecast
+  - Line chart showing forecast vs actual
+
+#### **Phase 2: Full Feature and Modeling Expansion**
+
+- **Weather Data Agent** – Fetch OpenWeatherMap and Open-Meteo data.
+- **Feature Engineering Agent** – Add rolling stats, lags, interactions.
+- **Forecast Agent (Hybrid)** – Add XGBoost to residual correction pipeline.
+- **UI Agent Enhancements** – Add:
+  - Site/date dropdowns
+  - Weather overlay toggle
+  - Forecast version comparison
+
+#### **Phase 3: Intelligence & Automation Layer**
+
+- **Anomaly Detector Agent** – z-score detection on residuals.
+- **Model Selector Agent** – Tune Prophet/XGBoost.
+- **Backtesting Agent** – Sliding window evaluation, error tracking.
+- **Retraining Agent** – Threshold-based model refresh.
+
+#### **Phase 4: Orchestration + Query Interface**
+
+- **LLM Query Agent** – Streamlit + LangChain GPT-4o integration.
+- **Supervisor Agent** – LangGraph-based execution DAG across all agents.
+- **UI Agent Finalization** – Add:
+  - Natural language chat tab
+  - Anomaly explorer tab
+  - Backtest viewer
+
+This phased build order allows continuous testing and stakeholder demos starting as early as Phase 1, while keeping backend agent expansion modular and scalable.
+
+Each agent plays a specialized role in the end-to-end pipeline. Below is a summary of recommended actions or scenarios for which each agent should be used:
+
+---
+
+### Agent Usage Guide
+
+#### 📥 Data Ingestion Agent
+
+- Use when receiving large or raw solar production data files.
+- Ideal for one-time ingestion or scheduled periodic imports.
+- Converts bulky CSVs to optimized Parquet files for downstream agents.
+
+#### 🧹 Preprocessing Agent
+
+- Use immediately after ingestion to ensure clean, consistent time series.
+- Necessary when dealing with missing timestamps, timezones, and data errors.
+- Recommended to run before any modeling step.
+
+#### 🌦️ Weather Data Agent
+
+- Fetch this agent's output before feature engineering or forecasting.
+- Trigger weekly/monthly for long-term NOAA and Open-Meteo backfill.
+- Use daily/hourly for OpenWeatherMap forecasts.
+
+#### 🔧 Feature Engineering Agent
+
+- Use before training or re-training any forecasting model.
+- Trigger after any schema update or addition of new weather inputs.
+
+#### 📊 Exploratory Agent
+
+- Use to inspect trends, gaps, and anomalies visually.
+- Ideal during development, feature selection, or model debugging.
+
+#### 🔮 Forecast Agent
+
+- Core agent for producing forecasts.
+- Run daily or hourly for operational forecasting.
+- Trigger retraining if RMSE increases from Backtesting Agent.
+
+#### 🎯 Model Selector Agent
+
+- Run when tuning Prophet or XGBoost hyperparameters.
+- Use during model onboarding, quarterly refresh, or post-drift detection.
+
+#### 🚨 Anomaly Detector Agent
+
+- Use after forecast generation to detect unexpected errors.
+- Helpful for QA dashboards and alerting workflows.
+
+#### 🔁 Retraining Agent
+
+- Runs only when Backtesting Agent signals degradation.
+- Triggered via threshold logic or Airflow DAGs.
+
+#### 🖥 UI Agent
+
+**Technology:** Streamlit
+
+**Responsibilities:**
+
+- Display forecasts, anomalies, backtest metrics, and user query results interactively.
+- Serve as the central interface for business stakeholders and technical users.
+
+**Build Steps:**
+
+1. Load final forecast and anomaly-tagged datasets from Parquet using DuckDB.
+2. Display Plotly line chart: forecast vs actual with anomaly highlights.
+3. Add dropdowns for site/date selection, and toggles for overlaying weather.
+4. Route user-entered natural language queries to LLM agent.
+5. Display backtest performance charts and data tables.
+
+**Optional Agent Integrations:**
+
+- Include a **file upload section** that directly invokes the Data Ingestion Agent using Polars or Spark backend.
+- Include a **weather API configuration form** that allows user to input site coordinates and date ranges to trigger the Weather Data Agent.
+
+**Scaling Tips:**
+
+- Use `@st.cache_data` for expensive queries or data fetch.
+- Modularize Streamlit into tabs (e.g., Forecasts, Anomalies, Query Bot, Ingestion).
+- Place UI components close to the source agent to reduce latency.
 
 ---
 
@@ -637,3 +757,15 @@ When working with high-volume solar datasets (e.g., 100+ GB files or trillions o
 | Scheduler              | Airflow or Prefect          |
 
 ---
+
+### 📌 Next Steps
+
+Options to proceed:
+
+1. Develop a **Streamlit Dashboard** powered by the Forecast Agent and UI Agent
+2. Set up a **LangChain LLM interface** to enable user queries
+3. Build a **backtesting pipeline** to evaluate model performance weekly
+4. Package everything into a **GitHub starter repo** with Docker support
+
+Let me know which track to build first.
+
