@@ -1,0 +1,27 @@
+import os
+import logging
+from weather_enrichment import WeatherEnrichment
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("WeatherTest")
+
+# Define input/output
+input_path = "./data/processed/processed_data.parquet"
+output_path = "./data/processed/processed_weather_sample.parquet"
+
+# Remove previous test file if exists
+if os.path.exists(output_path):
+    os.remove(output_path)
+    logger.info(f"Old test file removed: {output_path}")
+
+# Run enrichment on sample
+logger.info("Running test weather enrichment on first 20 records...")
+agent = WeatherEnrichment(data_path=input_path, output_path=output_path)
+agent.run(sample_size=20)
+
+# Verify output
+if os.path.exists(output_path):
+    logger.info(f"✅ Weather enrichment test succeeded! File created: {output_path}")
+else:
+    logger.error(f"❌ Weather enrichment test failed! File not created: {output_path}")

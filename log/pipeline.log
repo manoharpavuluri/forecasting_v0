@@ -1,0 +1,2 @@
+2025-06-21 04:51:28,538 INFO root - This should show up in both terminal and log file.
+2025-06-21 04:51:28,551 INFO WeatherEnrichment - Loading base data from: ./data/processed/processed_data.parquet
