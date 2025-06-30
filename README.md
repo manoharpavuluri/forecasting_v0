@@ -62,9 +62,7 @@ The application will open in your default web browser.
 3.  **Run Pipeline**: Click the "Run Preprocessing Pipeline" to start the workflow.
 4.  **View Outputs**: Processed files appear in the `data/processed/` directory.
 
----
-
-## 🤖 Agentic AI Playbook (System Vision)
+--- ## 🤖 Agentic AI Playbook (System Vision)
 
 This playbook outlines the long-term vision, architecture, and technical design for a comprehensive, multi-agent AI forecasting system.
 
@@ -140,18 +138,18 @@ The following LangGraph DAG defines the execution flow and data dependencies bet
 
 ```mermaid
 graph TD
-    Start[Start Pipeline] --> A[Data Ingestion Agent]
-    A --> B[Preprocessing Agent]
-    B --> C[Weather Data Agent]
-    C --> D[Feature Engineering Agent]
-    D --> E[Exploratory Agent]
-    D --> F[Forecast Agent]
-    F --> G[Anomaly Detector Agent]
-    G --> H[Retraining Agent]
-    F --> I[Backtesting Agent]
-    F --> J[UI Agent]
-    J --> K[LLM Query Agent]
-    H --> End[Pipeline Complete]
+    Start["Start Pipeline"] --> A["Data Ingestion Agent"]
+    A --> B["Preprocessing Agent"]
+    B --> C["Weather Data Agent"]
+    C --> D["Feature Engineering Agent"]
+    D --> E["Exploratory Agent"]
+    D --> F["Forecast Agent"]
+    F --> G["Anomaly Detector Agent"]
+    G --> H["Retraining Agent"]
+    F --> I["Backtesting Agent"]
+    F --> J["UI Agent"]
+    J --> K["LLM Query Agent"]
+    H --> End["Pipeline Complete"]
     K --> End
 ```
 
@@ -169,20 +167,6 @@ This section provides detailed build instructions for each agent in the forecast
 - Convert CSV to Parquet for efficient downstream processing.
 - Enable scalable, multi-threaded ingestion both locally and on Spark.
 
-**Build Steps (Local using Polars):**
-1. Use Polars to read the CSV with `low_memory=True`.
-2. Write it to Parquet.
-3. Move the Parquet file to a processing location.
-
-**Build Steps (Scalable using Spark):**
-1. Launch a Spark session.
-2. Read from the Parquet file.
-3. Optionally repartition for parallel processing.
-4. Persist clean output to a cloud location.
-5. Trigger ingestion from an orchestrator like Airflow or LangGraph.
-
-*(...and so on for all agents...)*
-
 ---
 
 ### 📈 Strategic Overview
@@ -195,13 +179,13 @@ The production pipeline uses a **hybrid model** (Prophet + XGBoost) to balance i
 **Forecasting Pipeline Diagram:**
 ```mermaid
 graph TD
-    A[Input Time Series + Weather Features] --> B[Prophet Model: Base Forecast]
-    A --> C[Feature Engineering (lags, rolling stats, weather)]
-    B --> D[Residuals]
-    D --> E[XGBoost: Train on Residuals]
-    E --> F[Residual Forecast]
-    B --> G[Base Forecast]
-    F --> H[Final Forecast = Base + Correction]
+    A["Input Time Series + Weather Features"] --> B["Prophet Model: Base Forecast"]
+    A --> C["Feature Engineering (lags, rolling stats, weather)"]
+    B --> D["Residuals"]
+    D --> E["XGBoost: Train on Residuals"]
+    E --> F["Residual Forecast"]
+    B --> G["Base Forecast"]
+    F --> H["Final Forecast = Base + Correction"]
     G --> H
 ```
 
@@ -238,4 +222,4 @@ To operationalize the system, here are the prioritized next actions:
 
 1.  **Develop a Streamlit Dashboard powered by Forecast Agent and UI Agent**
 2.  **Set up a LangChain LLM Interface to Enable User Queries**
-3.  **Build a Backtesting Pipeline to Evaluate Model Performance Weekly**
+3.  **Build a Backtesting Pipeline to Evaluate Model Performance Weekly** 
